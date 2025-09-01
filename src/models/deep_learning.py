@@ -1,507 +1,993 @@
 """
 Deep Learning Models for Astronomical Object Classification
-Implements CNN, MLP, and RNN architectures with advanced training techniques.
+Implements neural networks using TensorFlow/Keras for astronomical data.
 """
 
 import numpy as np
 import pandas as pd
-import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers, models, optimizers, callbacks
-from tensorflow.keras.utils import to_categorical
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
-import matplotlib.pyplot as plt
-import seaborn as sns
 import warnings
+import os
+from sklearn.metrics import classification_report, accuracy_score
+from sklearn.preprocessing import LabelEncoder
+
+# TensorFlow imports with error handling
+try:
+    import tensorflow as tf
+    from tensorflow import keras
+    from tensorflow import keras
+    from tensorflow import keras
+    from tensorflow import layers, models, callbacks, optimizers
+    from keras.utils import to_categorical
+    TENSORFLOW_AVAILABLE = True
+    
+    # Set TensorFlow logging level
+    tf.get_logger().setLevel('ERROR')
+    
+except ImportError:
+    TENSORFLOW_AVAILABLE = False
+    print("⚠️ TensorFlow not available. Deep learning models will be skipped.")
+
+# PyTorch imports with error handling
+try:
+    import torch
+    import torch.nn as nn
+    import torch.optim as optim
+    from torch.utils.data import DataLoader, TensorDataset
+    PYTORCH_AVAILABLE = True
+except ImportError:
+    PYTORCH_AVAILABLE = False
+    print("⚠️ PyTorch not available. PyTorch models will be skipped.")
+
 warnings.filterwarnings('ignore')
 
 class DeepLearningTrainer:
     """
-    Comprehensive deep learning trainer with multiple architectures.
+    Deep learning model trainer for astronomical classification.
     """
     
-    def __init__(self, input_shape=None, num_classes=3):
-        self.input_shape = input_shape
+    def __init__(self, num_classes=3):
+        """
+        Initialize the deep learning trainer.
+        
+        Args:
+            num_classes (int): Number of classification classes
+        """
         self.num_classes = num_classes
         self.models = {}
-        self.histories = {}
-        self.scalers = {}
+        self.history = {}
+        self.label_encoder = None
         
-        # Set random seeds for reproducibility
-        np.random.seed(42)
-        tf.random.set_seed(42)
-        
-    def create_mlp(self, input_dim, hidden_layers=[512, 256, 128], dropout_rate=0.3):
+    def create_dense_model(self, input_dim, hidden_layers=[128, 64, 32], dropout_rate=0.3):
         """
-        Create Multi-Layer Perceptron (MLP) model.
+        Create a dense neural network model.
         
         Args:
             input_dim (int): Number of input features
             hidden_layers (list): List of hidden layer sizes
-            dropout_rate (float): Dropout rate for regularization
+            dropout_rate (float): Dropout rate
             
         Returns:
-            keras.Model: Compiled MLP model
+            keras.Model: Dense neural network
         """
-        print("🧠 Creating MLP model...")
+        if not TENSORFLOW_AVAILABLE:
+            print("❌ TensorFlow not available")
+            return None
         
         model = models.Sequential()
-        
-        # Input layer
-        model.add(layers.Dense(hidden_layers[0], input_dim=input_dim, activation='relu'))
-        model.add(layers.BatchNormalization())
-        model.add(layers.Dropout(dropout_rate))
+        model.add(layers.Input(shape=(input_dim,)))
         
         # Hidden layers
-        for units in hidden_layers[1:]:
-            model.add(layers.Dense(units, activation='relu'))
-            model.add(layers.BatchNormalization())
-            model.add(layers.Dropout(dropout_rate))
+        for i, units in enumerate(hidden_layers):
+            model.add(layers.Dense(units, activation='relu', name=f'dense_{i+1}'))
+            model.add(layers.BatchNormalization(name=f'batch_norm_{i+1}'))
+            model.add(layers.Dropout(dropout_rate, name=f'dropout_{i+1}'))
         
         # Output layer
-        model.add(layers.Dense(self.num_classes, activation='softmax'))
+        if self.num_classes == 2:
+            model.add(layers.Dense(1, activation='sigmoid', name='output'))
+            loss = 'binary_crossentropy'
+        else:
+            model.add(layers.Dense(self.num_classes, activation='softmax', name='output'))
+            loss = 'categorical_crossentropy'
         
         # Compile model
         model.compile(
             optimizer=optimizers.Adam(learning_rate=0.001),
-            loss='categorical_crossentropy',
-            metrics=['accuracy', 'precision', 'recall']
+            loss=loss,
+            metrics=['accuracy']
         )
         
-        print(f"✅ MLP created with {model.count_params():,} parameters")
         return model
     
-    def create_cnn(self, input_shape, filters=[32, 64, 128], kernel_sizes=[3, 3, 3]):
+    def create_deep_model(self, input_dim, dropout_rate=0.4):
         """
-        Create Convolutional Neural Network (CNN) model.
+        Create a deeper neural network model.
         
         Args:
-            input_shape (tuple): Shape of input data
-            filters (list): List of filter sizes for each conv layer
-            kernel_sizes (list): List of kernel sizes for each conv layer
+            input_dim (int): Number of input features
+            dropout_rate (float): Dropout rate
             
         Returns:
-            keras.Model: Compiled CNN model
+            keras.Model: Deep neural network
         """
-        print("🖼️ Creating CNN model...")
+        if not TENSORFLOW_AVAILABLE:
+            print("❌ TensorFlow not available")
+            return None
         
         model = models.Sequential()
+        model.add(layers.Input(shape=(input_dim,)))
         
-        # Reshape input for 1D convolution (for tabular data)
-        if len(input_shape) == 1:
-            model.add(layers.Reshape((input_shape[0], 1), input_shape=input_shape))
-            input_shape = (input_shape[0], 1)
-        
-        # Convolutional layers
-        for i, (filters_num, kernel_size) in enumerate(zip(filters, kernel_sizes)):
-            if i == 0:
-                model.add(layers.Conv1D(filters_num, kernel_size, activation='relu', input_shape=input_shape))
-            else:
-                model.add(layers.Conv1D(filters_num, kernel_size, activation='relu'))
-            
-            model.add(layers.BatchNormalization())
-            model.add(layers.MaxPooling1D(2))
-            model.add(layers.Dropout(0.3))
-        
-        # Flatten and dense layers
-        model.add(layers.Flatten())
+        # First block
         model.add(layers.Dense(256, activation='relu'))
         model.add(layers.BatchNormalization())
-        model.add(layers.Dropout(0.5))
-        model.add(layers.Dense(128, activation='relu'))
-        model.add(layers.Dropout(0.3))
+        model.add(layers.Dropout(dropout_rate))
         
-        # Output layer
-        model.add(layers.Dense(self.num_classes, activation='softmax'))
-        
-        # Compile model
-        model.compile(
-            optimizer=optimizers.Adam(learning_rate=0.001),
-            loss='categorical_crossentropy',
-            metrics=['accuracy', 'precision', 'recall']
-        )
-        
-        print(f"✅ CNN created with {model.count_params():,} parameters")
-        return model
-    
-    def create_rnn(self, input_shape, lstm_units=[128, 64], dropout_rate=0.3):
-        """
-        Create Recurrent Neural Network (RNN) model.
-        
-        Args:
-            input_shape (tuple): Shape of input data
-            lstm_units (list): List of LSTM units for each layer
-            dropout_rate (float): Dropout rate for regularization
-            
-        Returns:
-            keras.Model: Compiled RNN model
-        """
-        print("🔄 Creating RNN model...")
-        
-        model = models.Sequential()
-        
-        # Reshape input for LSTM (for tabular data)
-        if len(input_shape) == 1:
-            model.add(layers.Reshape((input_shape[0], 1), input_shape=input_shape))
-            input_shape = (input_shape[0], 1)
-        
-        # LSTM layers
-        for i, units in enumerate(lstm_units):
-            return_sequences = i < len(lstm_units) - 1
-            model.add(layers.LSTM(units, return_sequences=return_sequences, dropout=dropout_rate))
-            model.add(layers.BatchNormalization())
-        
-        # Dense layers
+        # Second block
         model.add(layers.Dense(128, activation='relu'))
         model.add(layers.BatchNormalization())
         model.add(layers.Dropout(dropout_rate))
+        
+        # Third block
         model.add(layers.Dense(64, activation='relu'))
+        model.add(layers.BatchNormalization())
+        model.add(layers.Dropout(dropout_rate))
+        
+        # Fourth block
+        model.add(layers.Dense(32, activation='relu'))
+        model.add(layers.BatchNormalization())
         model.add(layers.Dropout(dropout_rate))
         
         # Output layer
-        model.add(layers.Dense(self.num_classes, activation='softmax'))
+        if self.num_classes == 2:
+            model.add(layers.Dense(1, activation='sigmoid'))
+            loss = 'binary_crossentropy'
+        else:
+            model.add(layers.Dense(self.num_classes, activation='softmax'))
+            loss = 'categorical_crossentropy'
         
-        # Compile model
         model.compile(
             optimizer=optimizers.Adam(learning_rate=0.001),
-            loss='categorical_crossentropy',
-            metrics=['accuracy', 'precision', 'recall']
+            loss=loss,
+            metrics=['accuracy']
         )
         
-        print(f"✅ RNN created with {model.count_params():,} parameters")
         return model
     
-    def create_ensemble(self, models_list, input_shape):
+    def create_wide_deep_model(self, input_dim):
         """
-        Create ensemble model combining multiple architectures.
+        Create a wide & deep model architecture.
         
         Args:
-            models_list (list): List of model creation functions
-            input_shape (tuple): Shape of input data
+            input_dim (int): Number of input features
             
         Returns:
-            keras.Model: Compiled ensemble model
+            keras.Model: Wide & Deep model
         """
-        print("🎭 Creating ensemble model...")
+        if not TENSORFLOW_AVAILABLE:
+            print("❌ TensorFlow not available")
+            return None
         
-        # Create individual models
-        individual_models = []
-        for model_func in models_list:
-            if 'cnn' in str(model_func).lower():
-                model = self.create_cnn(input_shape)
-            elif 'rnn' in str(model_func).lower():
-                model = self.create_rnn(input_shape)
-            else:
-                model = self.create_mlp(input_shape[0] if len(input_shape) == 1 else input_shape[0])
-            individual_models.append(model)
+        # Input layer
+        inputs = layers.Input(shape=(input_dim,))
         
-        # Create ensemble input
-        ensemble_input = layers.Input(shape=input_shape)
+        # Wide component (linear)
+        wide = layers.Dense(self.num_classes, activation='linear', name='wide')(inputs)
         
-        # Get predictions from each model
-        ensemble_outputs = []
-        for model in individual_models:
-            # Freeze the model weights
-            model.trainable = False
-            output = model(ensemble_input)
-            ensemble_outputs.append(output)
+        # Deep component
+        deep = layers.Dense(128, activation='relu')(inputs)
+        deep = layers.BatchNormalization()(deep)
+        deep = layers.Dropout(0.3)(deep)
         
-        # Average the predictions
-        ensemble_output = layers.Average()(ensemble_outputs)
+        deep = layers.Dense(64, activation='relu')(deep)
+        deep = layers.BatchNormalization()(deep)
+        deep = layers.Dropout(0.3)(deep)
         
-        # Create ensemble model
-        ensemble_model = models.Model(inputs=ensemble_input, outputs=ensemble_output)
+        deep = layers.Dense(32, activation='relu')(deep)
+        deep = layers.Dense(self.num_classes, activation='linear', name='deep')(deep)
         
-        # Compile ensemble
-        ensemble_model.compile(
-            optimizer=optimizers.Adam(learning_rate=0.001),
-            loss='categorical_crossentropy',
-            metrics=['accuracy', 'precision', 'recall']
-        )
+        # Combine wide and deep
+        combined = layers.Add()([wide, deep])
         
-        print(f"✅ Ensemble created with {ensemble_model.count_params():,} parameters")
-        return ensemble_model
-    
-    def prepare_data(self, X, y, test_size=0.2, val_size=0.2):
-        """
-        Prepare data for deep learning models.
-        
-        Args:
-            X (pd.DataFrame): Feature matrix
-            y (array): Target variable
-            test_size (float): Proportion of test set
-            val_size (float): Proportion of validation set
-            
-        Returns:
-            tuple: (X_train, X_val, X_test, y_train, y_val, y_test)
-        """
-        print("📊 Preparing data for deep learning...")
-        
-        # Convert to numpy arrays
-        X = X.values if hasattr(X, 'values') else X
-        y = y.values if hasattr(y, 'values') else y
-        
-        # Split into train and test
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=test_size, random_state=42, stratify=y
-        )
-        
-        # Split train into train and validation
-        X_train, X_val, y_train, y_val = train_test_split(
-            X_train, y_train, test_size=val_size, random_state=42, stratify=y_train
-        )
-        
-        # Scale features
-        scaler = StandardScaler()
-        X_train_scaled = scaler.fit_transform(X_train)
-        X_val_scaled = scaler.transform(X_val)
-        X_test_scaled = scaler.transform(X_test)
-        
-        # Store scaler
-        self.scalers['standard'] = scaler
-        
-        # Convert to categorical for multi-class
-        if self.num_classes > 2:
-            y_train_cat = to_categorical(y_train, num_classes=self.num_classes)
-            y_val_cat = to_categorical(y_val, num_classes=self.num_classes)
-            y_test_cat = to_categorical(y_test, num_classes=self.num_classes)
+        if self.num_classes == 2:
+            outputs = layers.Activation('sigmoid')(combined)
+            loss = 'binary_crossentropy'
         else:
-            y_train_cat = y_train
-            y_val_cat = y_val
-            y_test_cat = y_test
+            outputs = layers.Activation('softmax')(combined)
+            loss = 'categorical_crossentropy'
         
-        print(f"✅ Data prepared. Train: {X_train.shape}, Val: {X_val.shape}, Test: {X_test.shape}")
+        model = models.Model(inputs=inputs, outputs=outputs)
         
-        return (X_train_scaled, X_val_scaled, X_test_scaled, 
-                y_train_cat, y_val_cat, y_test_cat)
+        model.compile(
+            optimizer=optimizers.Adam(learning_rate=0.001),
+            loss=loss,
+            metrics=['accuracy']
+        )
+        
+        return model
     
-    def train_model(self, model, X_train, y_train, X_val, y_val, 
-                   model_name='model', epochs=100, batch_size=32):
+    def create_autoencoder_classifier(self, input_dim, encoding_dim=32):
         """
-        Train a deep learning model.
+        Create an autoencoder-based classifier.
         
         Args:
-            model (keras.Model): Model to train
-            X_train, y_train: Training data
-            X_val, y_val: Validation data
-            model_name (str): Name for the model
+            input_dim (int): Number of input features
+            encoding_dim (int): Encoding dimension
+            
+        Returns:
+            keras.Model: Autoencoder classifier
+        """
+        if not TENSORFLOW_AVAILABLE:
+            print("❌ TensorFlow not available")
+            return None
+        
+        # Input layer
+        inputs = layers.Input(shape=(input_dim,))
+        
+        # Encoder
+        encoded = layers.Dense(128, activation='relu')(inputs)
+        encoded = layers.Dense(64, activation='relu')(encoded)
+        encoded = layers.Dense(encoding_dim, activation='relu', name='encoding')(encoded)
+        
+        # Decoder
+        decoded = layers.Dense(64, activation='relu')(encoded)
+        decoded = layers.Dense(128, activation='relu')(decoded)
+        decoded = layers.Dense(input_dim, activation='linear')(decoded)
+        
+        # Classifier head
+        classifier = layers.Dense(64, activation='relu')(encoded)
+        classifier = layers.Dropout(0.3)(classifier)
+        
+        if self.num_classes == 2:
+            classifier = layers.Dense(1, activation='sigmoid')(classifier)
+            loss = {'output_class': 'binary_crossentropy', 'output_recon': 'mse'}
+        else:
+            classifier = layers.Dense(self.num_classes, activation='softmax')(classifier)
+            loss = {'output_class': 'categorical_crossentropy', 'output_recon': 'mse'}
+        
+        # Create model with two outputs
+        model = models.Model(
+            inputs=inputs, 
+            outputs={'output_class': classifier, 'output_recon': decoded}
+        )
+        
+        model.compile(
+            optimizer=optimizers.Adam(learning_rate=0.001),
+            loss=loss,
+            loss_weights={'output_class': 1.0, 'output_recon': 0.1},
+            metrics={'output_class': 'accuracy'}
+        )
+        
+        return model
+    
+    class PyTorchMLP(nn.Module):
+        """PyTorch Multi-Layer Perceptron."""
+        
+        def __init__(self, input_dim, num_classes, hidden_dims=[128, 64, 32]):
+            super().__init__()
+            self.layers = nn.ModuleList()
+            
+            # Input layer
+            prev_dim = input_dim
+            
+            # Hidden layers
+            for hidden_dim in hidden_dims:
+                self.layers.append(nn.Linear(prev_dim, hidden_dim))
+                self.layers.append(nn.BatchNorm1d(hidden_dim))
+                self.layers.append(nn.ReLU())
+                self.layers.append(nn.Dropout(0.3))
+                prev_dim = hidden_dim
+            
+            # Output layer
+            self.layers.append(nn.Linear(prev_dim, num_classes))
+        
+        def forward(self, x):
+            for layer in self.layers:
+                x = layer(x)
+            return x
+    
+    def train_pytorch_model(self, X_train, y_train, X_val=None, y_val=None, 
+                           epochs=50, batch_size=32, learning_rate=0.001):
+        """
+        Train a PyTorch model.
+        
+        Args:
+            X_train (np.ndarray): Training features
+            y_train (np.ndarray): Training target
+            X_val (np.ndarray): Validation features
+            y_val (np.ndarray): Validation target
             epochs (int): Number of training epochs
-            batch_size (int): Batch size for training
+            batch_size (int): Batch size
+            learning_rate (float): Learning rate
+            
+        Returns:
+            object: Trained PyTorch model
+        """
+        if not PYTORCH_AVAILABLE:
+            print("❌ PyTorch not available")
+            return None
+        
+        print("🔥 Training PyTorch MLP...")
+        
+        # Convert to PyTorch tensors
+        X_train_tensor = torch.FloatTensor(X_train)
+        y_train_tensor = torch.LongTensor(y_train)
+        
+        # Create data loader
+        train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        
+        # Create model
+        model = self.PyTorchMLP(X_train.shape[1], self.num_classes)
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5, factor=0.5)
+        
+        # Training loop
+        train_losses = []
+        train_accuracies = []
+        
+        for epoch in range(epochs):
+            model.train()
+            epoch_loss = 0.0
+            correct = 0
+            total = 0
+            
+            for batch_X, batch_y in train_loader:
+                optimizer.zero_grad()
+                outputs = model(batch_X)
+                loss = criterion(outputs, batch_y)
+                loss.backward()
+                optimizer.step()
+                
+                epoch_loss += loss.item()
+                _, predicted = torch.max(outputs.data, 1)
+                total += batch_y.size(0)
+                correct += (predicted == batch_y).sum().item()
+            
+            epoch_acc = 100 * correct / total
+            train_losses.append(epoch_loss / len(train_loader))
+            train_accuracies.append(epoch_acc)
+            
+            # Validation if provided
+            if X_val is not None and y_val is not None:
+                model.eval()
+                with torch.no_grad():
+                    X_val_tensor = torch.FloatTensor(X_val)
+                    y_val_tensor = torch.LongTensor(y_val)
+                    val_outputs = model(X_val_tensor)
+                    val_loss = criterion(val_outputs, y_val_tensor)
+                    _, val_predicted = torch.max(val_outputs.data, 1)
+                    val_acc = 100 * (val_predicted == y_val_tensor).sum().item() / y_val_tensor.size(0)
+                
+                scheduler.step(val_loss)
+                
+                if epoch % 10 == 0:
+                    print(f"   Epoch {epoch}: Train Loss: {train_losses[-1]:.4f}, "
+                          f"Train Acc: {epoch_acc:.2f}%, Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%")
+            else:
+                if epoch % 10 == 0:
+                    print(f"   Epoch {epoch}: Train Loss: {train_losses[-1]:.4f}, Train Acc: {epoch_acc:.2f}%")
+        
+        # Store training history
+        self.history['pytorch_mlp'] = {
+            'loss': train_losses,
+            'accuracy': train_accuracies
+        }
+        
+        return model
+    
+    def prepare_data_for_keras(self, X, y):
+        """
+        Prepare data for Keras training.
+        
+        Args:
+            X (np.ndarray): Features
+            y (np.ndarray): Target
+            
+        Returns:
+            tuple: Prepared (X, y) for Keras
+        """
+        X_prep = X.astype(np.float32)
+        
+        if self.num_classes == 2:
+            y_prep = y.astype(np.float32)
+        else:
+            y_prep = to_categorical(y, num_classes=self.num_classes)
+        
+        return X_prep, y_prep
+    
+    def train_keras_model(self, model_name, model, X_train, y_train, 
+                         X_val=None, y_val=None, epochs=50, batch_size=32):
+        """
+        Train a Keras model.
+        
+        Args:
+            model_name (str): Name of the model
+            model (keras.Model): Keras model to train
+            X_train (np.ndarray): Training features
+            y_train (np.ndarray): Training target
+            X_val (np.ndarray): Validation features
+            y_val (np.ndarray): Validation target
+            epochs (int): Number of epochs
+            batch_size (int): Batch size
             
         Returns:
             keras.Model: Trained model
         """
-        print(f"🚀 Training {model_name}...")
+        if not TENSORFLOW_AVAILABLE:
+            print("❌ TensorFlow not available")
+            return None
         
-        # Callbacks for better training
-        callbacks_list = [
-            callbacks.EarlyStopping(
-                monitor='val_loss',
-                patience=15,
-                restore_best_weights=True,
-                verbose=1
-            ),
+        print(f"🧠 Training {model_name}...")
+        
+        # Prepare data
+        X_train_prep, y_train_prep = self.prepare_data_for_keras(X_train, y_train)
+        
+        validation_data = None
+        if X_val is not None and y_val is not None:
+            X_val_prep, y_val_prep = self.prepare_data_for_keras(X_val, y_val)
+            validation_data = (X_val_prep, y_val_prep)
+        
+        # Callbacks
+        callback_list = [
             callbacks.ReduceLROnPlateau(
-                monitor='val_loss',
-                factor=0.5,
-                patience=10,
-                min_lr=1e-7,
-                verbose=1
+                monitor='val_loss' if validation_data else 'loss',
+                factor=0.5, patience=5, min_lr=1e-7, verbose=0
             ),
-            callbacks.ModelCheckpoint(
-                f'models/{model_name}_best.h5',
-                monitor='val_accuracy',
-                save_best_only=True,
-                verbose=1
+            callbacks.EarlyStopping(
+                monitor='val_loss' if validation_data else 'loss',
+                patience=10, restore_best_weights=True, verbose=0
             )
         ]
         
-        # Train the model
-        history = model.fit(
-            X_train, y_train,
-            validation_data=(X_val, y_val),
-            epochs=epochs,
-            batch_size=batch_size,
-            callbacks=callbacks_list,
-            verbose=1
-        )
-        
-        # Store model and history
-        self.models[model_name] = model
-        self.histories[model_name] = history
-        
-        print(f"✅ {model_name} training completed!")
-        return model
+        # Train model
+        try:
+            history = model.fit(
+                X_train_prep, y_train_prep,
+                epochs=epochs,
+                batch_size=batch_size,
+                validation_data=validation_data,
+                callbacks=callback_list,
+                verbose=0
+            )
+            
+            # Store history
+            self.history[model_name] = history.history
+            
+            print(f"   ✅ {model_name} training completed!")
+            if validation_data:
+                final_val_acc = history.history['val_accuracy'][-1]
+                print(f"   📊 Final validation accuracy: {final_val_acc:.4f}")
+            
+            return model
+            
+        except Exception as e:
+            print(f"   ❌ Error training {model_name}: {e}")
+            return None
     
-    def train_all_models(self, X, y, epochs=100, batch_size=32):
+    def train_all_models(self, X_train, y_train, X_val=None, y_val=None, 
+                        epochs=50, batch_size=32):
         """
-        Train all available deep learning models.
+        Train all deep learning models.
         
         Args:
-            X (pd.DataFrame): Feature matrix
-            y (array): Target variable
-            epochs (int): Number of training epochs
-            batch_size (int): Batch size for training
+            X_train (np.ndarray): Training features
+            y_train (np.ndarray): Training target
+            X_val (np.ndarray): Validation features
+            y_val (np.ndarray): Validation target
+            epochs (int): Number of epochs
+            batch_size (int): Batch size
             
         Returns:
             dict: Dictionary of trained models
         """
-        print("🚀 Training all deep learning models...")
-        print("=" * 50)
+        print("\n🧠 TRAINING DEEP LEARNING MODELS")
+        print("=" * 60)
         
-        # Prepare data
-        (X_train, X_val, X_test, 
-         y_train, y_val, y_test) = self.prepare_data(X, y)
+        input_dim = X_train.shape[1]
         
-        # Store test data for evaluation
-        self.X_test = X_test
-        self.y_test = y_test
+        # Create validation split if not provided
+        if X_val is None or y_val is None:
+            from sklearn.model_selection import train_test_split
+            X_train_split, X_val, y_train_split, y_val = train_test_split(
+                X_train, y_train, test_size=0.2, random_state=42, stratify=y_train
+            )
+            X_train = X_train_split
+            y_train = y_train_split
+            print("   📊 Created validation split (80/20)")
         
-        # Get input shape
-        input_shape = X_train.shape[1:]
+        # Dense Neural Network
+        if TENSORFLOW_AVAILABLE:
+            dense_model = self.create_dense_model(input_dim)
+            if dense_model is not None:
+                trained_dense = self.train_keras_model(
+                    'dense_nn', dense_model, X_train, y_train, 
+                    X_val, y_val, epochs, batch_size
+                )
+                if trained_dense is not None:
+                    self.models['dense_nn'] = trained_dense
+            
+            # Deep Neural Network
+            deep_model = self.create_deep_model(input_dim)
+            if deep_model is not None:
+                trained_deep = self.train_keras_model(
+                    'deep_nn', deep_model, X_train, y_train, 
+                    X_val, y_val, epochs, batch_size
+                )
+                if trained_deep is not None:
+                    self.models['deep_nn'] = trained_deep
+            
+            # Wide & Deep Model
+            wide_deep_model = self.create_wide_deep_model(input_dim)
+            if wide_deep_model is not None:
+                trained_wd = self.train_keras_model(
+                    'wide_deep', wide_deep_model, X_train, y_train, 
+                    X_val, y_val, epochs, batch_size
+                )
+                if trained_wd is not None:
+                    self.models['wide_deep'] = trained_wd
+            
+            # Autoencoder Classifier
+            autoencoder_model = self.create_autoencoder_classifier(input_dim)
+            if autoencoder_model is not None:
+                # Special training for autoencoder (needs reconstruction target)
+                X_train_prep, y_train_prep = self.prepare_data_for_keras(X_train, y_train)
+                X_val_prep, y_val_prep = self.prepare_data_for_keras(X_val, y_val)
+                
+                try:
+                    history = autoencoder_model.fit(
+                        X_train_prep, 
+                        {'output_class': y_train_prep, 'output_recon': X_train_prep},
+                        epochs=epochs,
+                        batch_size=batch_size,
+                        validation_data=(
+                            X_val_prep, 
+                            {'output_class': y_val_prep, 'output_recon': X_val_prep}
+                        ),
+                        callbacks=[
+                            callbacks.ReduceLROnPlateau(patience=5, factor=0.5, verbose=0),
+                            callbacks.EarlyStopping(patience=10, restore_best_weights=True, verbose=0)
+                        ],
+                        verbose=0
+                    )
+                    
+                    self.models['autoencoder'] = autoencoder_model
+                    self.history['autoencoder'] = history.history
+                    print("   ✅ Autoencoder classifier training completed!")
+                    
+                except Exception as e:
+                    print(f"   ❌ Error training autoencoder: {e}")
         
-        # Train MLP
-        mlp_model = self.create_mlp(input_shape[0] if len(input_shape) == 1 else input_shape[0])
-        self.train_model(mlp_model, X_train, y_train, X_val, y_val, 
-                        'mlp', epochs, batch_size)
+        # PyTorch MLP
+        if PYTORCH_AVAILABLE:
+            pytorch_model = self.train_pytorch_model(
+                X_train, y_train, X_val, y_val, epochs, batch_size
+            )
+            if pytorch_model is not None:
+                self.models['pytorch_mlp'] = pytorch_model
         
-        # Train CNN
-        cnn_model = self.create_cnn(input_shape)
-        self.train_model(cnn_model, X_train, y_train, X_val, y_val, 
-                        'cnn', epochs, batch_size)
-        
-        # Train RNN
-        rnn_model = self.create_rnn(input_shape)
-        self.train_model(rnn_model, X_train, y_train, X_val, y_val, 
-                        'rnn', epochs, batch_size)
-        
-        # Train Ensemble
-        ensemble_model = self.create_ensemble([self.create_mlp, self.create_cnn, self.create_rnn], input_shape)
-        self.train_model(ensemble_model, X_train, y_train, X_val, y_val, 
-                        'ensemble', epochs, batch_size)
-        
-        print("\n🎉 All deep learning models trained successfully!")
+        print(f"\n🎉 Deep learning training completed! {len(self.models)} models trained.")
         return self.models
     
-    def evaluate_model(self, model_name):
+    def predict(self, model_name, X_test):
         """
-        Evaluate a specific model on test data.
+        Make predictions using a trained model.
         
         Args:
-            model_name (str): Name of the model to evaluate
+            model_name (str): Name of the model
+            X_test (np.ndarray): Test features
             
         Returns:
-            dict: Evaluation results
+            np.ndarray: Predictions
         """
         if model_name not in self.models:
             raise ValueError(f"Model '{model_name}' not found")
         
         model = self.models[model_name]
-        y_pred = model.predict(self.X_test)
-        y_pred_classes = np.argmax(y_pred, axis=1)
-        y_test_classes = np.argmax(self.y_test, axis=1)
         
-        # Calculate metrics
-        accuracy = (y_pred_classes == y_test_classes).mean()
+        if model_name == 'pytorch_mlp' and PYTORCH_AVAILABLE:
+            # PyTorch prediction
+            model.eval()
+            with torch.no_grad():
+                X_tensor = torch.FloatTensor(X_test)
+                outputs = model(X_tensor)
+                _, predictions = torch.max(outputs, 1)
+                return predictions.numpy()
         
-        # Classification report
-        report = classification_report(y_test_classes, y_pred_classes, output_dict=True)
+        elif TENSORFLOW_AVAILABLE and hasattr(model, 'predict'):
+            # Keras prediction
+            X_test_prep = X_test.astype(np.float32)
+            
+            if model_name == 'autoencoder':
+                # Special handling for autoencoder
+                predictions = model.predict(X_test_prep, verbose=0)
+                if isinstance(predictions, dict):
+                    pred_proba = predictions['output_class']
+                else:
+                    pred_proba = predictions[0]  # First output is classification
+            else:
+                pred_proba = model.predict(X_test_prep, verbose=0)
+            
+            if self.num_classes == 2:
+                return (pred_proba > 0.5).astype(int).flatten()
+            else:
+                return np.argmax(pred_proba, axis=1)
         
-        # Confusion matrix
-        cm = confusion_matrix(y_test_classes, y_pred_classes)
-        
-        # ROC AUC
-        try:
-            roc_auc = roc_auc_score(self.y_test, y_pred, multi_class='ovr')
-        except:
-            roc_auc = None
-        
-        results = {
-            'model_name': model_name,
-            'accuracy': accuracy,
-            'classification_report': report,
-            'confusion_matrix': cm,
-            'roc_auc': roc_auc
-        }
-        
-        return results
+        else:
+            raise ValueError(f"Cannot make predictions with model '{model_name}'")
     
-    def plot_training_history(self, model_name):
+    def predict_proba(self, model_name, X_test):
         """
-        Plot training history for a specific model.
+        Get prediction probabilities.
         
         Args:
             model_name (str): Name of the model
+            X_test (np.ndarray): Test features
+            
+        Returns:
+            np.ndarray: Prediction probabilities
         """
-        if model_name not in self.histories:
-            print(f"⚠️ No training history found for {model_name}")
+        if model_name not in self.models:
+            raise ValueError(f"Model '{model_name}' not found")
+        
+        model = self.models[model_name]
+        
+        if model_name == 'pytorch_mlp' and PYTORCH_AVAILABLE:
+            # PyTorch prediction probabilities
+            model.eval()
+            with torch.no_grad():
+                X_tensor = torch.FloatTensor(X_test)
+                outputs = model(X_tensor)
+                probabilities = torch.softmax(outputs, dim=1)
+                return probabilities.numpy()
+        
+        elif TENSORFLOW_AVAILABLE and hasattr(model, 'predict'):
+            # Keras prediction probabilities
+            X_test_prep = X_test.astype(np.float32)
+            
+            if model_name == 'autoencoder':
+                predictions = model.predict(X_test_prep, verbose=0)
+                if isinstance(predictions, dict):
+                    return predictions['output_class']
+                else:
+                    return predictions[0]  # First output is classification
+            else:
+                return model.predict(X_test_prep, verbose=0)
+        
+        else:
+            raise ValueError(f"Cannot get probabilities from model '{model_name}'")
+    
+    def evaluate_model(self, model_name, X_test, y_test):
+        """
+        Evaluate a trained model.
+        
+        Args:
+            model_name (str): Name of the model
+            X_test (np.ndarray): Test features
+            y_test (np.ndarray): Test target
+            
+        Returns:
+            dict: Evaluation metrics
+        """
+        y_pred = self.predict(model_name, X_test)
+        
+        accuracy = accuracy_score(y_test, y_pred)
+        report = classification_report(y_test, y_pred, output_dict=True)
+        
+        metrics = {
+            'accuracy': accuracy,
+            'precision_macro': report['macro avg']['precision'],
+            'recall_macro': report['macro avg']['recall'],
+            'f1_macro': report['macro avg']['f1-score'],
+            'precision_weighted': report['weighted avg']['precision'],
+            'recall_weighted': report['weighted avg']['recall'],
+            'f1_weighted': report['weighted avg']['f1-score']
+        }
+        
+        return metrics
+    
+    def save_models(self, save_dir='models/'):
+        """
+        Save all trained models.
+        
+        Args:
+            save_dir (str): Directory to save models
+        """
+        print(f"\n💾 SAVING DEEP LEARNING MODELS TO {save_dir}")
+        print("-" * 40)
+        
+        os.makedirs(save_dir, exist_ok=True)
+        
+        for model_name, model in self.models.items():
+            try:
+                if model_name == 'pytorch_mlp' and PYTORCH_AVAILABLE:
+                    # Save PyTorch model
+                    model_path = os.path.join(save_dir, f'{model_name}_model.pth')
+                    torch.save(model.state_dict(), model_path)
+                    
+                    # Save model architecture info
+                    arch_info = {
+                        'input_dim': model.layers[0].in_features,
+                        'num_classes': self.num_classes,
+                        'hidden_dims': [layer.out_features for layer in model.layers 
+                                       if isinstance(layer, nn.Linear)][:-1]
+                    }
+                    arch_path = os.path.join(save_dir, f'{model_name}_architecture.joblib')
+                    import joblib
+                    joblib.dump(arch_info, arch_path)
+                    
+                elif TENSORFLOW_AVAILABLE and hasattr(model, 'save'):
+                    # Save Keras model
+                    model_path = os.path.join(save_dir, f'{model_name}_model.h5')
+                    model.save(model_path)
+                
+                print(f"   ✅ {model_name} saved")
+                
+            except Exception as e:
+                print(f"   ❌ Error saving {model_name}: {e}")
+        
+        # Save training history
+        if self.history:
+            history_path = os.path.join(save_dir, 'dl_training_history.joblib')
+            import joblib
+            # Convert numpy arrays to lists for serialization
+            history_serializable = {}
+            for model_name, hist in self.history.items():
+                history_serializable[model_name] = {}
+                for key, value in hist.items():
+                    if isinstance(value, np.ndarray):
+                        history_serializable[model_name][key] = value.tolist()
+                    elif isinstance(value, list):
+                        history_serializable[model_name][key] = value
+                    else:
+                        history_serializable[model_name][key] = [value]
+            
+            joblib.dump(history_serializable, history_path)
+            print(f"   ✅ Training history saved")
+    
+    def load_models(self, load_dir='models/'):
+        """
+        Load saved models.
+        
+        Args:
+            load_dir (str): Directory to load models from
+        """
+        print(f"\n📂 LOADING DEEP LEARNING MODELS FROM {load_dir}")
+        print("-" * 40)
+        
+        if not os.path.exists(load_dir):
+            print(f"❌ Model directory not found: {load_dir}")
             return
         
-        history = self.histories[model_name]
+        # Load Keras models
+        if TENSORFLOW_AVAILABLE:
+            keras_files = [f for f in os.listdir(load_dir) if f.endswith('.h5')]
+            for model_file in keras_files:
+                model_name = model_file.replace('_model.h5', '')
+                model_path = os.path.join(load_dir, model_file)
+                
+                try:
+                    self.models[model_name] = keras.models.load_model(model_path)
+                    print(f"   ✅ {model_name} loaded")
+                except Exception as e:
+                    print(f"   ❌ Error loading {model_name}: {e}")
         
-        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-        fig.suptitle(f'Training History - {model_name.upper()}', fontsize=16)
+        # Load PyTorch models
+        if PYTORCH_AVAILABLE:
+            pytorch_files = [f for f in os.listdir(load_dir) if f.endswith('.pth')]
+            for model_file in pytorch_files:
+                model_name = model_file.replace('_model.pth', '')
+                model_path = os.path.join(load_dir, model_file)
+                arch_path = os.path.join(load_dir, f'{model_name}_architecture.joblib')
+                
+                if os.path.exists(arch_path):
+                    try:
+                        import joblib
+                        arch_info = joblib.load(arch_path)
+                        
+                        # Recreate model architecture
+                        model = self.PyTorchMLP(
+                            arch_info['input_dim'],
+                            arch_info['num_classes'],
+                            arch_info['hidden_dims']
+                        )
+                        
+                        # Load weights
+                        model.load_state_dict(torch.load(model_path))
+                        model.eval()
+                        
+                        self.models[model_name] = model
+                        print(f"   ✅ {model_name} loaded")
+                        
+                    except Exception as e:
+                        print(f"   ❌ Error loading {model_name}: {e}")
         
-        # Accuracy
-        axes[0, 0].plot(history.history['accuracy'], label='Training Accuracy')
-        axes[0, 0].plot(history.history['val_accuracy'], label='Validation Accuracy')
-        axes[0, 0].set_title('Model Accuracy')
-        axes[0, 0].set_xlabel('Epoch')
-        axes[0, 0].set_ylabel('Accuracy')
-        axes[0, 0].legend()
-        axes[0, 0].grid(True)
+        # Load training history
+        history_path = os.path.join(load_dir, 'dl_training_history.joblib')
+        if os.path.exists(history_path):
+            try:
+                import joblib
+                self.history = joblib.load(history_path)
+                print(f"   ✅ Training history loaded")
+            except Exception as e:
+                print(f"   ⚠️ Error loading training history: {e}")
+    
+    def get_model_summary(self):
+        """
+        Get summary of all trained models.
         
-        # Loss
-        axes[0, 1].plot(history.history['loss'], label='Training Loss')
-        axes[0, 1].plot(history.history['val_loss'], label='Validation Loss')
-        axes[0, 1].set_title('Model Loss')
-        axes[0, 1].set_xlabel('Epoch')
-        axes[0, 1].set_ylabel('Loss')
-        axes[0, 1].legend()
-        axes[0, 1].grid(True)
+        Returns:
+            pd.DataFrame: Model summary
+        """
+        if not self.models:
+            return pd.DataFrame()
         
-        # Precision
-        if 'precision' in history.history:
-            axes[1, 0].plot(history.history['precision'], label='Training Precision')
-            axes[1, 0].plot(history.history['val_precision'], label='Validation Precision')
-            axes[1, 0].set_title('Model Precision')
-            axes[1, 0].set_xlabel('Epoch')
-            axes[1, 0].set_ylabel('Precision')
-            axes[1, 0].legend()
-            axes[1, 0].grid(True)
+        summary_data = []
         
-        # Recall
-        if 'recall' in history.history:
-            axes[1, 1].plot(history.history['recall'], label='Training Recall')
-            axes[1, 1].plot(history.history['val_recall'], label='Validation Recall')
-            axes[1, 1].set_title('Model Recall')
-            axes[1, 1].set_xlabel('Epoch')
-            axes[1, 1].set_ylabel('Recall')
-            axes[1, 1].legend()
-            axes[1, 1].grid(True)
+        for model_name, model in self.models.items():
+            # Get model info
+            if model_name == 'pytorch_mlp' and PYTORCH_AVAILABLE:
+                total_params = sum(p.numel() for p in model.parameters())
+                trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+            elif TENSORFLOW_AVAILABLE and hasattr(model, 'count_params'):
+                total_params = model.count_params()
+                trainable_params = total_params
+            else:
+                total_params = 'Unknown'
+                trainable_params = 'Unknown'
+            
+            # Get final training metrics
+            final_loss = 'N/A'
+            final_acc = 'N/A'
+            
+            if model_name in self.history:
+                hist = self.history[model_name]
+                if 'loss' in hist and hist['loss']:
+                    final_loss = hist['loss'][-1]
+                if 'accuracy' in hist and hist['accuracy']:
+                    final_acc = hist['accuracy'][-1]
+                elif 'output_class_accuracy' in hist and hist['output_class_accuracy']:
+                    final_acc = hist['output_class_accuracy'][-1]
+            
+            summary_data.append({
+                'Model': model_name,
+                'Framework': 'PyTorch' if model_name == 'pytorch_mlp' else 'TensorFlow',
+                'Total_Parameters': total_params,
+                'Trainable_Parameters': trainable_params,
+                'Final_Loss': final_loss,
+                'Final_Accuracy': final_acc
+            })
+        
+        return pd.DataFrame(summary_data)
+    
+    def plot_training_history(self, model_name=None):
+        """
+        Plot training history for models.
+        
+        Args:
+            model_name (str): Specific model to plot (None = all models)
+        """
+        if not self.history:
+            print("⚠️ No training history available")
+            return
+        
+        import matplotlib.pyplot as plt
+        
+        models_to_plot = [model_name] if model_name else list(self.history.keys())
+        
+        fig, axes = plt.subplots(len(models_to_plot), 2, figsize=(15, 5*len(models_to_plot)))
+        if len(models_to_plot) == 1:
+            axes = axes.reshape(1, -1)
+        
+        for i, model_name in enumerate(models_to_plot):
+            if model_name not in self.history:
+                continue
+                
+            hist = self.history[model_name]
+            
+            # Plot loss
+            if 'loss' in hist:
+                axes[i, 0].plot(hist['loss'], label='Training Loss')
+                if 'val_loss' in hist:
+                    axes[i, 0].plot(hist['val_loss'], label='Validation Loss')
+                axes[i, 0].set_title(f'{model_name} - Loss')
+                axes[i, 0].set_xlabel('Epoch')
+                axes[i, 0].set_ylabel('Loss')
+                axes[i, 0].legend()
+                axes[i, 0].grid(True)
+            
+            # Plot accuracy
+            acc_key = 'accuracy'
+            if acc_key not in hist and 'output_class_accuracy' in hist:
+                acc_key = 'output_class_accuracy'
+            
+            if acc_key in hist:
+                axes[i, 1].plot(hist[acc_key], label='Training Accuracy')
+                val_acc_key = f'val_{acc_key}'
+                if val_acc_key in hist:
+                    axes[i, 1].plot(hist[val_acc_key], label='Validation Accuracy')
+                axes[i, 1].set_title(f'{model_name} - Accuracy')
+                axes[i, 1].set_xlabel('Epoch')
+                axes[i, 1].set_ylabel('Accuracy')
+                axes[i, 1].legend()
+                axes[i, 1].grid(True)
         
         plt.tight_layout()
+        plt.savefig(f'results/{model_name if model_name else "all"}_training_history.png', 
+                   dpi=300, bbox_inches='tight')
         plt.show()
     
-    def save_models(self, directory='models/'):
-        """Save all trained models."""
-        import os
-        os.makedirs(directory, exist_ok=True)
+    def create_ensemble_model(self, X_train, y_train, model_list=None):
+        """
+        Create an ensemble of deep learning models.
         
-        for name, model in self.models.items():
-            filepath = os.path.join(directory, f'{name}.h5')
-            model.save(filepath)
-            print(f"💾 Saved {name} to {filepath}")
-    
-    def load_models(self, directory='models/'):
-        """Load saved models."""
-        import os
+        Args:
+            X_train (np.ndarray): Training features
+            y_train (np.ndarray): Training target
+            model_list (list): List of models to ensemble
+            
+        Returns:
+            object: Ensemble model
+        """
+        if not TENSORFLOW_AVAILABLE:
+            print("❌ TensorFlow required for ensemble creation")
+            return None
         
-        for filename in os.listdir(directory):
-            if filename.endswith('.h5'):
-                name = filename.replace('.h5', '')
-                filepath = os.path.join(directory, filename)
-                self.models[name] = keras.models.load_model(filepath)
-                print(f"📂 Loaded {name} from {filepath}")
+        if model_list is None:
+            model_list = [name for name in self.models.keys() if 'pytorch' not in name]
+        
+        if len(model_list) < 2:
+            print("⚠️ Need at least 2 models for ensemble")
+            return None
+        
+        print(f"🎭 Creating ensemble from models: {model_list}")
+        
+        # Create ensemble input
+        input_dim = X_train.shape[1]
+        inputs = layers.Input(shape=(input_dim,))
+        
+        # Get predictions from each model
+        model_outputs = []
+        for model_name in model_list:
+            if model_name in self.models and model_name != 'autoencoder':
+                # Create a copy of the model's architecture for ensemble
+                model = self.models[model_name]
+                # Extract features from the pre-output layer
+                feature_extractor = models.Model(
+                    inputs=model.input,
+                    outputs=model.layers[-2].output
+                )
+                features = feature_extractor(inputs)
+                model_outputs.append(features)
+        
+        if not model_outputs:
+            print("❌ No compatible models found for ensemble")
+            return None
+        
+        # Combine features
+        if len(model_outputs) == 1:
+            combined = model_outputs[0]
+        else:
+            combined = layers.Concatenate()(model_outputs)
+        
+        # Final classification layer
+        ensemble_output = layers.Dense(64, activation='relu')(combined)
+        ensemble_output = layers.Dropout(0.3)(ensemble_output)
+        
+        if self.num_classes == 2:
+            ensemble_output = layers.Dense(1, activation='sigmoid')(ensemble_output)
+            loss = 'binary_crossentropy'
+        else:
+            ensemble_output = layers.Dense(self.num_classes, activation='softmax')(ensemble_output)
+            loss = 'categorical_crossentropy'
+        
+        ensemble_model = models.Model(inputs=inputs, outputs=ensemble_output)
+        ensemble_model.compile(
+            optimizer=optimizers.Adam(learning_rate=0.0001),
+            loss=loss,
+            metrics=['accuracy']
+        )
+        
+        return ensemble_model
+
+            

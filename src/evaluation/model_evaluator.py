@@ -1,6 +1,6 @@
 """
-Model Evaluation Module for Astronomical Object Classification
-Provides comprehensive evaluation metrics, analysis, and comparison tools.
+Model Evaluator for Astronomical Object Classification
+Comprehensive evaluation metrics and visualization tools.
 """
 
 import numpy as np
@@ -8,433 +8,444 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import (
-    classification_report, confusion_matrix, roc_auc_score, 
-    precision_recall_curve, roc_curve, accuracy_score,
-    precision_score, recall_score, f1_score, cohen_kappa_score
+    accuracy_score, precision_score, recall_score, f1_score,
+    classification_report, confusion_matrix, roc_auc_score,
+    roc_curve, precision_recall_curve, average_precision_score
 )
-from sklearn.model_selection import cross_val_score, StratifiedKFold
-import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
+from sklearn.model_selection import cross_val_score
 import warnings
 warnings.filterwarnings('ignore')
 
 class ModelEvaluator:
-    """
-    Comprehensive model evaluator with advanced metrics and visualization.
-    """
+    """Comprehensive model evaluation for astronomical classification."""
     
     def __init__(self):
+        """Initialize the evaluator."""
         self.results = {}
         self.comparison_df = None
-        
-    def evaluate_classification_model(self, model, X_test, y_test, model_name='model'):
-        """
-        Evaluate a classification model comprehensively.
-        
-        Args:
-            model: Trained model with predict and predict_proba methods
-            X_test: Test features
-            y_test: True test labels
-            model_name: Name of the model for identification
-            
-        Returns:
-            dict: Comprehensive evaluation results
-        """
-        print(f"🔍 Evaluating {model_name}...")
-        
-        # Make predictions
-        y_pred = model.predict(X_test)
-        
-        # Get prediction probabilities if available
-        try:
-            y_proba = model.predict_proba(X_test)
-            has_proba = True
-        except:
-            y_proba = None
-            has_proba = False
-        
-        # Calculate basic metrics
-        accuracy = accuracy_score(y_test, y_pred)
-        precision = precision_score(y_test, y_pred, average='weighted')
-        recall = recall_score(y_test, y_pred, average='weighted')
-        f1 = f1_score(y_test, y_pred, average='weighted')
-        kappa = cohen_kappa_score(y_test, y_pred)
-        
-        # Classification report
-        report = classification_report(y_test, y_pred, output_dict=True)
-        
-        # Confusion matrix
-        cm = confusion_matrix(y_test, y_pred)
-        
-        # ROC AUC (if probabilities available)
-        roc_auc = None
-        if has_proba and y_proba is not None:
-            try:
-                if y_proba.shape[1] == 2:  # Binary classification
-                    roc_auc = roc_auc_score(y_test, y_proba[:, 1])
-                else:  # Multi-class
-                    roc_auc = roc_auc_score(y_test, y_proba, multi_class='ovr')
-            except:
-                roc_auc = None
-        
-        # Store results
-        results = {
-            'model_name': model_name,
-            'accuracy': accuracy,
-            'precision': precision,
-            'recall': recall,
-            'f1_score': f1,
-            'kappa': kappa,
-            'roc_auc': roc_auc,
-            'classification_report': report,
-            'confusion_matrix': cm,
-            'predictions': y_pred,
-            'probabilities': y_proba,
-            'has_probabilities': has_proba
-        }
-        
-        self.results[model_name] = results
-        
-        print(f"✅ {model_name} evaluation completed!")
-        print(f"   Accuracy: {accuracy:.4f}")
-        print(f"   Precision: {precision:.4f}")
-        print(f"   Recall: {recall:.4f}")
-        print(f"   F1-Score: {f1:.4f}")
-        if roc_auc:
-            print(f"   ROC-AUC: {roc_auc:.4f}")
-        
-        return results
+        self.class_names = ['STAR', 'GALAXY', 'QSO']
     
-    def cross_validate_model(self, model, X, y, cv=5, scoring='accuracy'):
+    def evaluate_single_model(self, model, X_test, y_test, model_name="Model"):
         """
-        Perform cross-validation on a model.
+        Evaluate a single model and return comprehensive metrics.
         
         Args:
-            model: Model to cross-validate
-            X: Feature matrix
-            y: Target variable
-            cv: Number of cross-validation folds
-            scoring: Scoring metric
+            model: Trained model
+            X_test: Test features
+            y_test: Test labels
+            model_name: Name of the model
             
         Returns:
-            dict: Cross-validation results
+            dict: Dictionary containing all evaluation metrics
         """
-        print(f"🔄 Performing {cv}-fold cross-validation...")
-        
-        # Perform cross-validation
-        cv_scores = cross_val_score(model, X, y, cv=cv, scoring=scoring, n_jobs=-1)
-        
-        # Calculate statistics
-        cv_mean = cv_scores.mean()
-        cv_std = cv_scores.std()
-        cv_min = cv_scores.min()
-        cv_max = cv_scores.max()
-        
-        cv_results = {
-            'cv_scores': cv_scores,
-            'mean': cv_mean,
-            'std': cv_std,
-            'min': cv_min,
-            'max': cv_max,
-            'folds': cv
-        }
-        
-        print(f"✅ Cross-validation completed!")
-        print(f"   Mean {scoring}: {cv_mean:.4f} ± {cv_std:.4f}")
-        print(f"   Range: [{cv_min:.4f}, {cv_max:.4f}]")
-        
-        return cv_results
+        try:
+            # Get predictions
+            y_pred = model.predict(X_test)
+            
+            # Get probabilities if available
+            try:
+                y_proba = model.predict_proba(X_test)
+            except:
+                y_proba = None
+            
+            # Calculate basic metrics
+            metrics = {
+                'model_name': model_name,
+                'accuracy': accuracy_score(y_test, y_pred),
+                'precision': precision_score(y_test, y_pred, average='weighted', zero_division=0),
+                'recall': recall_score(y_test, y_pred, average='weighted', zero_division=0),
+                'f1_score': f1_score(y_test, y_pred, average='weighted', zero_division=0)
+            }
+            
+            # Calculate per-class metrics
+            per_class_metrics = {}
+            for i, class_name in enumerate(self.class_names):
+                if i < len(np.unique(y_test)):
+                    per_class_metrics[f'{class_name.lower()}_precision'] = precision_score(
+                        y_test, y_pred, labels=[i], average='micro', zero_division=0
+                    )
+                    per_class_metrics[f'{class_name.lower()}_recall'] = recall_score(
+                        y_test, y_pred, labels=[i], average='micro', zero_division=0
+                    )
+                    per_class_metrics[f'{class_name.lower()}_f1'] = f1_score(
+                        y_test, y_pred, labels=[i], average='micro', zero_division=0
+                    )
+            
+            metrics.update(per_class_metrics)
+            
+            # Calculate AUC if probabilities available and multiclass
+            if y_proba is not None and len(np.unique(y_test)) > 2:
+                try:
+                    metrics['roc_auc'] = roc_auc_score(y_test, y_proba, multi_class='ovr', average='weighted')
+                except:
+                    metrics['roc_auc'] = np.nan
+            elif y_proba is not None and len(np.unique(y_test)) == 2:
+                try:
+                    metrics['roc_auc'] = roc_auc_score(y_test, y_proba[:, 1])
+                except:
+                    metrics['roc_auc'] = np.nan
+            else:
+                metrics['roc_auc'] = np.nan
+            
+            # Store detailed results
+            self.results[model_name] = {
+                'predictions': y_pred,
+                'probabilities': y_proba,
+                'metrics': metrics,
+                'confusion_matrix': confusion_matrix(y_test, y_pred),
+                'classification_report': classification_report(y_test, y_pred, 
+                                                             target_names=self.class_names[:len(np.unique(y_test))],
+                                                             zero_division=0)
+            }
+            
+            return metrics
+            
+        except Exception as e:
+            print(f"Error evaluating {model_name}: {e}")
+            return {'model_name': model_name, 'accuracy': 0.0, 'precision': 0.0, 'recall': 0.0, 'f1_score': 0.0, 'roc_auc': 0.0}
     
     def compare_models(self, models_dict, X_test, y_test):
         """
-        Compare multiple models and create comparison dataframe.
+        Compare multiple models and return comparison DataFrame.
         
         Args:
-            models_dict: Dictionary of {model_name: model} pairs
+            models_dict: Dictionary of model_name: model pairs
             X_test: Test features
-            y_test: True test labels
+            y_test: Test labels
             
         Returns:
-            pd.DataFrame: Model comparison results
+            pd.DataFrame: Comparison results sorted by accuracy
         """
-        print("📊 Comparing all models...")
-        
         comparison_results = []
         
-        for name, model in models_dict.items():
-            # Evaluate model
-            results = self.evaluate_classification_model(model, X_test, y_test, name)
-            
-            # Extract key metrics
+        print(f"Evaluating {len(models_dict)} models...")
+        
+        for model_name, model in models_dict.items():
+            print(f"  Evaluating {model_name}...")
+            metrics = self.evaluate_single_model(model, X_test, y_test, model_name)
             comparison_results.append({
-                'Model': name,
-                'Accuracy': results['accuracy'],
-                'Precision': results['precision'],
-                'Recall': results['recall'],
-                'F1-Score': results['f1_score'],
-                'Kappa': results['kappa'],
-                'ROC-AUC': results['roc_auc'] if results['roc_auc'] else np.nan
+                'Model': model_name,
+                'Accuracy': metrics['accuracy'],
+                'Precision': metrics['precision'],
+                'Recall': metrics['recall'],
+                'F1-Score': metrics['f1_score'],
+                'ROC-AUC': metrics.get('roc_auc', np.nan)
             })
         
-        # Create comparison dataframe
+        # Create comparison DataFrame
         self.comparison_df = pd.DataFrame(comparison_results)
-        self.comparison_df = self.comparison_df.sort_values('Accuracy', ascending=False)
+        self.comparison_df = self.comparison_df.sort_values('Accuracy', ascending=False).reset_index(drop=True)
         
-        print("\n🏆 MODEL COMPARISON RESULTS")
-        print("=" * 50)
-        print(self.comparison_df.round(4))
+        # Display results
+        print("\nModel Comparison Results:")
+        print("=" * 80)
+        print(self.comparison_df.round(4).to_string(index=False))
         
         return self.comparison_df
     
-    def plot_confusion_matrix(self, model_name, figsize=(8, 6)):
+    def get_best_model(self, metric='Accuracy'):
         """
-        Plot confusion matrix for a specific model.
+        Get the best performing model based on specified metric.
         
         Args:
-            model_name: Name of the model to plot
-            figsize: Figure size
-        """
-        if model_name not in self.results:
-            print(f"⚠️ No results found for {model_name}")
-            return
-        
-        results = self.results[model_name]
-        cm = results['confusion_matrix']
-        
-        plt.figure(figsize=figsize)
-        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
-                   xticklabels=['Star', 'Galaxy', 'Quasar'],
-                   yticklabels=['Star', 'Galaxy', 'Quasar'])
-        plt.title(f'Confusion Matrix - {model_name.upper()}')
-        plt.xlabel('Predicted Label')
-        plt.ylabel('True Label')
-        plt.tight_layout()
-        plt.show()
-    
-    def plot_roc_curves(self, figsize=(12, 8)):
-        """
-        Plot ROC curves for all models with probabilities.
-        
-        Args:
-            figsize: Figure size
-        """
-        plt.figure(figsize=figsize)
-        
-        for model_name, results in self.results.items():
-            if results['has_probabilities'] and results['probabilities'] is not None:
-                y_proba = results['probabilities']
-                y_test = results.get('y_test', None)
-                
-                if y_test is not None and y_proba.shape[1] == 2:
-                    # Binary classification
-                    fpr, tpr, _ = roc_curve(y_test, y_proba[:, 1])
-                    auc = roc_auc_score(y_test, y_proba[:, 1])
-                    plt.plot(fpr, tpr, label=f'{model_name} (AUC = {auc:.3f})')
-        
-        plt.plot([0, 1], [0, 1], 'k--', label='Random Classifier')
-        plt.xlabel('False Positive Rate')
-        plt.ylabel('True Positive Rate')
-        plt.title('ROC Curves Comparison')
-        plt.legend()
-        plt.grid(True)
-        plt.tight_layout()
-        plt.show()
-    
-    def plot_precision_recall_curves(self, figsize=(12, 8)):
-        """
-        Plot Precision-Recall curves for all models.
-        
-        Args:
-            figsize: Figure size
-        """
-        plt.figure(figsize=figsize)
-        
-        for model_name, results in self.results.items():
-            if results['has_probabilities'] and results['probabilities'] is not None:
-                y_proba = results['probabilities']
-                y_test = results.get('y_test', None)
-                
-                if y_test is not None and y_proba.shape[1] == 2:
-                    # Binary classification
-                    precision, recall, _ = precision_recall_curve(y_test, y_proba[:, 1])
-                    plt.plot(recall, precision, label=f'{model_name}')
-        
-        plt.xlabel('Recall')
-        plt.ylabel('Precision')
-        plt.title('Precision-Recall Curves Comparison')
-        plt.legend()
-        plt.grid(True)
-        plt.tight_layout()
-        plt.show()
-    
-    def plot_model_comparison(self, figsize=(15, 10)):
-        """
-        Create comprehensive model comparison visualization.
-        
-        Args:
-            figsize: Figure size
-        """
-        if self.comparison_df is None:
-            print("⚠️ No comparison data available. Run compare_models() first.")
-            return
-        
-        # Create subplots
-        fig, axes = plt.subplots(2, 3, figsize=figsize)
-        fig.suptitle('Model Performance Comparison', fontsize=16)
-        
-        # Metrics to plot
-        metrics = ['Accuracy', 'Precision', 'Recall', 'F1-Score', 'Kappa', 'ROC-AUC']
-        
-        for i, metric in enumerate(metrics):
-            row = i // 3
-            col = i % 3
-            
-            if metric in self.comparison_df.columns:
-                # Filter out NaN values
-                data = self.comparison_df.dropna(subset=[metric])
-                
-                if len(data) > 0:
-                    bars = axes[row, col].bar(data['Model'], data[metric])
-                    axes[row, col].set_title(f'{metric} Comparison')
-                    axes[row, col].set_ylabel(metric)
-                    axes[row, col].tick_params(axis='x', rotation=45)
-                    
-                    # Add value labels on bars
-                    for bar in bars:
-                        height = bar.get_height()
-                        axes[row, col].text(bar.get_x() + bar.get_width()/2., height,
-                                          f'{height:.3f}', ha='center', va='bottom')
-        
-        plt.tight_layout()
-        plt.show()
-    
-    def create_interactive_comparison(self):
-        """
-        Create interactive Plotly comparison dashboard.
-        
-        Returns:
-            plotly.graph_objects.Figure: Interactive comparison plot
-        """
-        if self.comparison_df is None:
-            print("⚠️ No comparison data available. Run compare_models() first.")
-            return None
-        
-        # Create subplots
-        fig = make_subplots(
-            rows=2, cols=3,
-            subplot_titles=['Accuracy', 'Precision', 'Recall', 'F1-Score', 'Kappa', 'ROC-AUC'],
-            specs=[[{"type": "bar"}, {"type": "bar"}, {"type": "bar"}],
-                   [{"type": "bar"}, {"type": "bar"}, {"type": "bar"}]]
-        )
-        
-        # Add traces for each metric
-        metrics = ['Accuracy', 'Precision', 'Recall', 'F1-Score', 'Kappa', 'ROC-AUC']
-        
-        for i, metric in enumerate(metrics):
-            if metric in self.comparison_df.columns:
-                # Filter out NaN values
-                data = self.comparison_df.dropna(subset=[metric])
-                
-                if len(data) > 0:
-                    row = (i // 3) + 1
-                    col = (i % 3) + 1
-                    
-                    fig.add_trace(
-                        go.Bar(
-                            x=data['Model'],
-                            y=data[metric],
-                            name=metric,
-                            text=[f'{val:.3f}' for val in data[metric]],
-                            textposition='auto'
-                        ),
-                        row=row, col=col
-                    )
-        
-        # Update layout
-        fig.update_layout(
-            title_text="Interactive Model Performance Comparison",
-            showlegend=False,
-            height=800
-        )
-        
-        return fig
-    
-    def generate_evaluation_report(self, output_file=None):
-        """
-        Generate comprehensive evaluation report.
-        
-        Args:
-            output_file: Path to save the report (optional)
-            
-        Returns:
-            str: Report content
-        """
-        if not self.results:
-            return "No evaluation results available."
-        
-        report = []
-        report.append("=" * 60)
-        report.append("ASTRONOMICAL OBJECT CLASSIFICATION - EVALUATION REPORT")
-        report.append("=" * 60)
-        report.append("")
-        
-        # Overall comparison
-        if self.comparison_df is not None:
-            report.append("🏆 OVERALL MODEL RANKING")
-            report.append("-" * 30)
-            report.append(self.comparison_df.to_string(index=False))
-            report.append("")
-        
-        # Individual model details
-        for model_name, results in self.results.items():
-            report.append(f"📊 DETAILED RESULTS - {model_name.upper()}")
-            report.append("-" * 40)
-            report.append(f"Accuracy: {results['accuracy']:.4f}")
-            report.append(f"Precision: {results['precision']:.4f}")
-            report.append(f"Recall: {results['recall']:.4f}")
-            report.append(f"F1-Score: {results['f1_score']:.4f}")
-            report.append(f"Kappa: {results['kappa']:.4f}")
-            if results['roc_auc']:
-                report.append(f"ROC-AUC: {results['roc_auc']:.4f}")
-            report.append("")
-            
-            # Classification report
-            if 'classification_report' in results:
-                report.append("Classification Report:")
-                report.append(str(pd.DataFrame(results['classification_report']).round(4)))
-                report.append("")
-        
-        report_content = "\n".join(report)
-        
-        # Save to file if specified
-        if output_file:
-            with open(output_file, 'w') as f:
-                f.write(report_content)
-            print(f"💾 Evaluation report saved to {output_file}")
-        
-        return report_content
-    
-    def get_best_model(self, metric='accuracy'):
-        """
-        Get the best performing model based on a specific metric.
-        
-        Args:
-            metric: Metric to use for ranking
+            metric: Metric to use for comparison
             
         Returns:
             tuple: (best_model_name, best_score)
         """
+        if self.comparison_df is None or len(self.comparison_df) == 0:
+            return None, None
+        
+        best_row = self.comparison_df.loc[self.comparison_df[metric].idxmax()]
+        return best_row['Model'], best_row[metric]
+    
+    def plot_confusion_matrices(self, models_to_plot=None, figsize=(15, 10)):
+        """
+        Plot confusion matrices for specified models.
+        
+        Args:
+            models_to_plot: List of model names to plot (None for all)
+            figsize: Figure size
+        """
+        if not self.results:
+            print("No evaluation results available. Run compare_models first.")
+            return
+        
+        if models_to_plot is None:
+            models_to_plot = list(self.results.keys())
+        
+        n_models = len(models_to_plot)
+        if n_models == 0:
+            return
+        
+        # Calculate subplot arrangement
+        n_cols = min(3, n_models)
+        n_rows = (n_models + n_cols - 1) // n_cols
+        
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
+        if n_models == 1:
+            axes = [axes]
+        elif n_rows == 1:
+            axes = axes.reshape(1, -1)
+        
+        for i, model_name in enumerate(models_to_plot):
+            if model_name not in self.results:
+                continue
+                
+            row = i // n_cols
+            col = i % n_cols
+            ax = axes[row, col] if n_rows > 1 else axes[col]
+            
+            cm = self.results[model_name]['confusion_matrix']
+            
+            # Plot confusion matrix
+            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax,
+                       xticklabels=self.class_names[:cm.shape[1]],
+                       yticklabels=self.class_names[:cm.shape[0]])
+            ax.set_title(f'{model_name}\nAccuracy: {self.results[model_name]["metrics"]["accuracy"]:.3f}')
+            ax.set_xlabel('Predicted')
+            ax.set_ylabel('Actual')
+        
+        # Hide empty subplots
+        for i in range(n_models, n_rows * n_cols):
+            row = i // n_cols
+            col = i % n_cols
+            if n_rows > 1:
+                axes[row, col].set_visible(False)
+            elif n_cols > 1:
+                axes[col].set_visible(False)
+        
+        plt.tight_layout()
+        plt.savefig('plots/confusion_matrices.png', dpi=300, bbox_inches='tight')
+        plt.show()
+    
+    def plot_model_comparison(self, metrics=['Accuracy', 'Precision', 'Recall', 'F1-Score'], figsize=(15, 10)):
+        """
+        Plot model comparison across multiple metrics.
+        
+        Args:
+            metrics: List of metrics to compare
+            figsize: Figure size
+        """
         if self.comparison_df is None:
-            return None, None
+            print("No comparison results available. Run compare_models first.")
+            return
         
-        if metric not in self.comparison_df.columns:
-            print(f"⚠️ Metric '{metric}' not available")
-            return None, None
+        n_metrics = len(metrics)
+        fig, axes = plt.subplots(2, 2, figsize=figsize)
+        fig.suptitle('Model Performance Comparison', fontsize=16, fontweight='bold')
         
-        # Find best model
-        best_idx = self.comparison_df[metric].idxmax()
-        best_model = self.comparison_df.loc[best_idx, 'Model']
-        best_score = self.comparison_df.loc[best_idx, metric]
+        colors = ['skyblue', 'lightgreen', 'lightcoral', 'plum']
         
-        return best_model, best_score
+        for i, (metric, color) in enumerate(zip(metrics[:4], colors)):
+            if metric not in self.comparison_df.columns:
+                continue
+                
+            ax = axes[i//2, i%2]
+            
+            # Create bar plot
+            bars = ax.bar(self.comparison_df['Model'], self.comparison_df[metric], 
+                         color=color, alpha=0.7, edgecolor='black', linewidth=0.5)
+            
+            ax.set_title(f'{metric} Comparison', fontweight='bold')
+            ax.set_ylabel(metric)
+            ax.tick_params(axis='x', rotation=45)
+            ax.grid(axis='y', alpha=0.3)
+            
+            # Add value labels on bars
+            for bar, value in zip(bars, self.comparison_df[metric]):
+                if not np.isnan(value):
+                    ax.text(bar.get_x() + bar.get_width()/2., value + 0.005,
+                           f'{value:.3f}', ha='center', va='bottom', fontweight='bold')
+        
+        plt.tight_layout()
+        plt.savefig('plots/model_comparison.png', dpi=300, bbox_inches='tight')
+        plt.show()
+    
+    def plot_roc_curves(self, models_to_plot=None, figsize=(12, 8)):
+        """
+        Plot ROC curves for binary or multiclass classification.
+        
+        Args:
+            models_to_plot: List of model names to plot
+            figsize: Figure size
+        """
+        if not self.results:
+            print("No evaluation results available.")
+            return
+        
+        if models_to_plot is None:
+            models_to_plot = list(self.results.keys())
+        
+        plt.figure(figsize=figsize)
+        
+        for model_name in models_to_plot:
+            if model_name not in self.results:
+                continue
+                
+            result = self.results[model_name]
+            if result['probabilities'] is None:
+                continue
+            
+            try:
+                # For binary classification
+                if result['probabilities'].shape[1] == 2:
+                    y_test = [1 if pred == 1 else 0 for pred in result['predictions']]  # Simplified for demo
+                    fpr, tpr, _ = roc_curve(y_test, result['probabilities'][:, 1])
+                    auc = roc_auc_score(y_test, result['probabilities'][:, 1])
+                    plt.plot(fpr, tpr, label=f'{model_name} (AUC = {auc:.3f})')
+                
+            except Exception as e:
+                print(f"Could not plot ROC curve for {model_name}: {e}")
+        
+        plt.plot([0, 1], [0, 1], 'k--', alpha=0.5)
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('ROC Curves Comparison')
+        plt.legend()
+        plt.grid(alpha=0.3)
+        plt.savefig('plots/roc_curves.png', dpi=300, bbox_inches='tight')
+        plt.show()
+    
+    def generate_evaluation_report(self, filepath='results/evaluation_report.txt'):
+        """
+        Generate comprehensive evaluation report.
+        
+        Args:
+            filepath: Path to save the report
+        """
+        import os
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        
+        with open(filepath, 'w') as f:
+            f.write("ASTRONOMICAL OBJECT CLASSIFICATION - EVALUATION REPORT\n")
+            f.write("=" * 70 + "\n\n")
+            f.write(f"Report generated: {pd.Timestamp.now()}\n\n")
+            
+            # Model comparison summary
+            if self.comparison_df is not None:
+                f.write("MODEL PERFORMANCE SUMMARY\n")
+                f.write("-" * 30 + "\n")
+                f.write(self.comparison_df.round(4).to_string(index=False))
+                f.write("\n\n")
+                
+                # Best model
+                best_model, best_score = self.get_best_model('Accuracy')
+                f.write(f"Best Performing Model: {best_model}\n")
+                f.write(f"Best Accuracy: {best_score:.4f}\n\n")
+            
+            # Detailed results for each model
+            if self.results:
+                f.write("DETAILED MODEL RESULTS\n")
+                f.write("-" * 25 + "\n\n")
+                
+                for model_name, result in self.results.items():
+                    f.write(f"Model: {model_name}\n")
+                    f.write("=" * 20 + "\n")
+                    
+                    # Metrics
+                    metrics = result['metrics']
+                    f.write(f"Accuracy: {metrics['accuracy']:.4f}\n")
+                    f.write(f"Precision: {metrics['precision']:.4f}\n")
+                    f.write(f"Recall: {metrics['recall']:.4f}\n")
+                    f.write(f"F1-Score: {metrics['f1_score']:.4f}\n")
+                    if 'roc_auc' in metrics and not np.isnan(metrics['roc_auc']):
+                        f.write(f"ROC-AUC: {metrics['roc_auc']:.4f}\n")
+                    f.write("\n")
+                    
+                    # Classification report
+                    f.write("Classification Report:\n")
+                    f.write(result['classification_report'])
+                    f.write("\n" + "-" * 50 + "\n\n")
+        
+        print(f"Evaluation report saved to: {filepath}")
+        return filepath
+    
+    def cross_validate_models(self, models_dict, X, y, cv=5, scoring='accuracy'):
+        """
+        Perform cross-validation on multiple models.
+        
+        Args:
+            models_dict: Dictionary of models
+            X: Features
+            y: Labels
+            cv: Number of cross-validation folds
+            scoring: Scoring metric
+            
+        Returns:
+            pd.DataFrame: Cross-validation results
+        """
+        cv_results = []
+        
+        print(f"Performing {cv}-fold cross-validation...")
+        
+        for model_name, model in models_dict.items():
+            try:
+                scores = cross_val_score(model, X, y, cv=cv, scoring=scoring)
+                cv_results.append({
+                    'Model': model_name,
+                    'CV_Mean': scores.mean(),
+                    'CV_Std': scores.std(),
+                    'CV_Min': scores.min(),
+                    'CV_Max': scores.max()
+                })
+                print(f"  {model_name}: {scores.mean():.4f} ± {scores.std():.4f}")
+            except Exception as e:
+                print(f"  CV failed for {model_name}: {e}")
+                cv_results.append({
+                    'Model': model_name,
+                    'CV_Mean': 0.0,
+                    'CV_Std': 0.0,
+                    'CV_Min': 0.0,
+                    'CV_Max': 0.0
+                })
+        
+        cv_df = pd.DataFrame(cv_results).sort_values('CV_Mean', ascending=False)
+        return cv_df
+    
+    def feature_importance_analysis(self, model, feature_names, model_name="Model"):
+        """
+        Analyze feature importance for tree-based models.
+        
+        Args:
+            model: Trained model with feature_importances_ attribute
+            feature_names: List of feature names
+            model_name: Name of the model
+            
+        Returns:
+            pd.DataFrame: Feature importance dataframe
+        """
+        if not hasattr(model, 'feature_importances_'):
+            print(f"Model {model_name} does not have feature importance.")
+            return None
+        
+        importance_df = pd.DataFrame({
+            'feature': feature_names,
+            'importance': model.feature_importances_
+        }).sort_values('importance', ascending=False)
+        
+        return importance_df
+    
+    def save_results(self, directory='results'):
+        """
+        Save all evaluation results to files.
+        
+        Args:
+            directory: Directory to save results
+        """
+        import os
+        os.makedirs(directory, exist_ok=True)
+        
+        # Save comparison results
+        if self.comparison_df is not None:
+            self.comparison_df.to_csv(f'{directory}/model_comparison.csv', index=False)
+        
+        # Save detailed results
+        if self.results:
+            import pickle
+            with open(f'{directory}/detailed_results.pkl', 'wb') as f:
+                pickle.dump(self.results, f)
+        
+        print(f"Results saved to {directory}/")

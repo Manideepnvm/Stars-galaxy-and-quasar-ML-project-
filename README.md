@@ -55,18 +55,6 @@ ml project/
 - Python 3.8+
 - Required packages (see requirements.txt)
 
-### Installation
-```bash
-# Clone the repository
-git clone <your-repo-url>
-cd "ml project"
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run the main analysis
-python src/main.py
-```
 
 ## 📈 Expected Results
 - **Classification Accuracy**: >95% on test set
@@ -82,7 +70,7 @@ This project demonstrates how modern machine learning can revolutionize astronom
 - Enabling discovery of rare and unusual objects
 
 ## 👥 Contributors
-- [Your Name] - Lead ML Engineer
+- [Manideep] - Lead ML Engineer
 - [Institution/Organization]
 
 ## 📄 License

@@ -15,7 +15,7 @@ from src.preprocessing.data_processor import AstronomicalDataProcessor
 from src.models.ml_models import MLModelTrainer
 from src.models.deep_learning import DeepLearningTrainer
 from src.evaluation.model_evaluator import ModelEvaluator
-from src.visualization.visualizer import AstronomicalVisualizer
+from src.visualization.visualizer import EnhancedAstronomicalVisualizer
 from sklearn.model_selection import train_test_split
 import pandas as pd
 import numpy as np
@@ -34,7 +34,7 @@ def main():
     ml_trainer = MLModelTrainer()
     dl_trainer = DeepLearningTrainer(num_classes=3)
     evaluator = ModelEvaluator()
-    visualizer = AstronomicalVisualizer()
+    visualizer = EnhancedAstronomicalVisualizer()
     
     # Configuration
     config = {

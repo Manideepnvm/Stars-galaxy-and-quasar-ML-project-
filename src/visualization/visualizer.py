@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE, UMAP
+from sklearn.manifold import TSNE
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 from sklearn.metrics import classification_report, roc_curve, roc_auc_score, precision_recall_curve
@@ -46,6 +46,26 @@ class EnhancedAstronomicalVisualizer:
         
         # Initialize style
         self.set_style(style)
+    
+    def set_style(self, style='modern'):
+        """
+        Set the visualization style.
+        
+        Args:
+            style (str): Style name ('modern', 'classic', 'minimal')
+        """
+        if style == 'modern':
+            plt.style.use('seaborn-v0_8-darkgrid')
+            sns.set_palette("Set2")
+        elif style == 'classic':
+            plt.style.use('classic')
+            sns.set_palette("husl")
+        elif style == 'minimal':
+            plt.style.use('default')
+            sns.set_palette("pastel")
+        else:
+            plt.style.use('default')
+            sns.set_palette("Set2")
         
     def plot_enhanced_data_overview(self, data, target_col='class', figsize=(20, 15)):
         """
@@ -1183,3 +1203,279 @@ class EnhancedAstronomicalVisualizer:
         )
 
         return fig
+    
+    def plot_data_distribution(self, data, target_col='class', figsize=(12, 8)):
+        """
+        Plot data distribution for the target variable.
+        
+        Args:
+            data (pd.DataFrame): Input dataset
+            target_col (str): Target column name
+            figsize (tuple): Figure size
+        """
+        print("📊 Creating data distribution plot...")
+        
+        if target_col not in data.columns:
+            print(f"⚠️ Target column '{target_col}' not found")
+            return
+        
+        fig, axes = plt.subplots(1, 2, figsize=figsize)
+        fig.suptitle('Data Distribution Analysis', fontsize=16, fontweight='bold')
+        
+        # Class distribution
+        class_counts = data[target_col].value_counts()
+        labels = [self.object_types.get(idx, idx) for idx in class_counts.index]
+        
+        axes[0].pie(class_counts.values, labels=labels, autopct='%1.1f%%', 
+                   colors=self.colors['astronomical'][:len(labels)], startangle=90)
+        axes[0].set_title('Class Distribution')
+        
+        # Class counts bar plot
+        bars = axes[1].bar(labels, class_counts.values, 
+                          color=self.colors['astronomical'][:len(labels)])
+        axes[1].set_title('Class Counts')
+        axes[1].set_ylabel('Count')
+        axes[1].tick_params(axis='x', rotation=45)
+        
+        # Add value labels on bars
+        for bar in bars:
+            height = bar.get_height()
+            axes[1].text(bar.get_x() + bar.get_width()/2., height + 10,
+                        f'{int(height)}', ha='center', va='bottom', fontweight='bold')
+        
+        plt.tight_layout()
+        plt.show()
+    
+    def plot_correlation_matrix(self, data, figsize=(12, 10)):
+        """
+        Plot correlation matrix for numerical features.
+        
+        Args:
+            data (pd.DataFrame): Input dataset
+            figsize (tuple): Figure size
+        """
+        print("📊 Creating correlation matrix...")
+        
+        numerical_data = data.select_dtypes(include=[np.number])
+        
+        if len(numerical_data.columns) < 2:
+            print("⚠️ Need at least 2 numerical columns for correlation analysis")
+            return
+        
+        # Calculate correlation matrix
+        corr_matrix = numerical_data.corr()
+        
+        # Create heatmap
+        plt.figure(figsize=figsize)
+        mask = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)
+        
+        sns.heatmap(corr_matrix, mask=mask, annot=True, cmap='RdBu_r', center=0,
+                   square=True, linewidths=0.5, cbar_kws={"shrink": .8},
+                   fmt='.2f', annot_kws={'size': 8})
+        
+        plt.title('Feature Correlation Matrix', fontweight='bold', fontsize=14)
+        plt.tight_layout()
+        plt.show()
+    
+    def plot_feature_importance(self, importance_df, top_n=20, figsize=(12, 8)):
+        """
+        Plot feature importance from a DataFrame.
+        
+        Args:
+            importance_df (pd.DataFrame): DataFrame with 'feature' and 'importance' columns
+            top_n (int): Number of top features to show
+            figsize (tuple): Figure size
+        """
+        print(f"🎯 Creating feature importance plot (top {top_n})...")
+        
+        if importance_df is None or len(importance_df) == 0:
+            print("⚠️ No feature importance data provided")
+            return
+        
+        # Sort by importance and take top N
+        top_features = importance_df.head(top_n)
+        
+        plt.figure(figsize=figsize)
+        bars = plt.barh(range(len(top_features)), top_features['importance'], 
+                       color=self.colors['gradient'][:len(top_features)])
+        
+        plt.yticks(range(len(top_features)), top_features['feature'])
+        plt.xlabel('Importance')
+        plt.title(f'Top {top_n} Feature Importance', fontweight='bold')
+        plt.gca().invert_yaxis()
+        plt.grid(axis='x', alpha=0.3)
+        
+        # Add value labels
+        for i, bar in enumerate(bars):
+            width = bar.get_width()
+            plt.text(width + 0.001, bar.get_y() + bar.get_height()/2,
+                    f'{width:.3f}', ha='left', va='center', fontweight='bold')
+        
+        plt.tight_layout()
+        plt.show()
+    
+    def plot_dimensionality_reduction(self, X, y=None, method='pca', figsize=(12, 8)):
+        """
+        Plot dimensionality reduction results.
+        
+        Args:
+            X (array-like): Feature matrix
+            y (array-like): Target variable (optional)
+            method (str): Reduction method ('pca', 'tsne', 'umap')
+            figsize (tuple): Figure size
+        """
+        print(f"🔍 Creating {method.upper()} dimensionality reduction plot...")
+        
+        from sklearn.preprocessing import StandardScaler
+        
+        # Scale features
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+        
+        if method.lower() == 'pca':
+            from sklearn.decomposition import PCA
+            reducer = PCA(n_components=2)
+            X_reduced = reducer.fit_transform(X_scaled)
+            title = f'PCA (Explained Variance: {reducer.explained_variance_ratio_.sum():.2%})'
+            
+        elif method.lower() == 'tsne':
+            from sklearn.manifold import TSNE
+            reducer = TSNE(n_components=2, random_state=42, perplexity=min(30, len(X_scaled)//4))
+            X_reduced = reducer.fit_transform(X_scaled)
+            title = 't-SNE Visualization'
+            
+        elif method.lower() == 'umap':
+            try:
+                from umap import UMAP
+                reducer = UMAP(n_components=2, random_state=42)
+                X_reduced = reducer.fit_transform(X_scaled)
+                title = 'UMAP Visualization'
+            except ImportError:
+                print("⚠️ UMAP not available. Using PCA instead.")
+                from sklearn.decomposition import PCA
+                reducer = PCA(n_components=2)
+                X_reduced = reducer.fit_transform(X_scaled)
+                title = 'PCA (UMAP not available)'
+        
+        # Create plot
+        plt.figure(figsize=figsize)
+        
+        if y is not None:
+            scatter = plt.scatter(X_reduced[:, 0], X_reduced[:, 1], c=y, 
+                                cmap='viridis', alpha=0.6, s=30)
+            plt.colorbar(scatter, label='Class')
+        else:
+            plt.scatter(X_reduced[:, 0], X_reduced[:, 1], alpha=0.6, s=30)
+        
+        plt.xlabel(f'{method.upper()} Component 1')
+        plt.ylabel(f'{method.upper()} Component 2')
+        plt.title(title, fontweight='bold')
+        plt.grid(alpha=0.3)
+        plt.tight_layout()
+        plt.show()
+    
+    def plot_astronomical_features(self, data, target_col='class', figsize=(15, 10)):
+        """
+        Plot astronomical-specific features.
+        
+        Args:
+            data (pd.DataFrame): Input dataset
+            target_col (str): Target column name
+            figsize (tuple): Figure size
+        """
+        print("🌟 Creating astronomical features analysis...")
+        
+        # Check for photometric bands
+        bands = ['u', 'g', 'r', 'i', 'z']
+        available_bands = [band for band in bands if band in data.columns]
+        
+        if len(available_bands) < 2:
+            print("⚠️ Need at least 2 photometric bands for astronomical analysis")
+            return
+        
+        fig, axes = plt.subplots(2, 2, figsize=figsize)
+        fig.suptitle('Astronomical Features Analysis', fontsize=16, fontweight='bold')
+        
+        # 1. Color-color diagram
+        if 'g' in data.columns and 'r' in data.columns and 'i' in data.columns:
+            g_r = data['g'] - data['r']
+            r_i = data['r'] - data['i']
+            
+            if target_col in data.columns:
+                scatter = axes[0, 0].scatter(g_r, r_i, c=data[target_col].astype('category').cat.codes,
+                                           cmap='viridis', alpha=0.6, s=20)
+                axes[0, 0].set_xlabel('g - r (Color Index)')
+                axes[0, 0].set_ylabel('r - i (Color Index)')
+                axes[0, 0].set_title('Color-Color Diagram')
+                axes[0, 0].grid(alpha=0.3)
+                plt.colorbar(scatter, ax=axes[0, 0], label='Object Type')
+        
+        # 2. Magnitude distribution
+        if 'r' in data.columns:
+            if target_col in data.columns:
+                for obj_type in data[target_col].unique():
+                    subset = data[data[target_col] == obj_type]['r'].dropna()
+                    label = self.object_types.get(obj_type, obj_type)
+                    axes[0, 1].hist(subset, bins=30, alpha=0.6, label=label)
+                
+                axes[0, 1].set_xlabel('r-band Magnitude')
+                axes[0, 1].set_ylabel('Frequency')
+                axes[0, 1].set_title('Magnitude Distribution by Type')
+                axes[0, 1].legend()
+                axes[0, 1].grid(alpha=0.3)
+        
+        # 3. Redshift distribution
+        if 'redshift' in data.columns:
+            redshift_data = data['redshift'][data['redshift'] > 0]
+            if len(redshift_data) > 0:
+                axes[1, 0].hist(np.log10(redshift_data), bins=50, alpha=0.7, color='#9B59B6')
+                axes[1, 0].set_xlabel('log₁₀(Redshift)')
+                axes[1, 0].set_ylabel('Frequency')
+                axes[1, 0].set_title('Redshift Distribution (log scale)')
+                axes[1, 0].grid(alpha=0.3)
+        
+        # 4. Sky coordinates
+        if 'ra' in data.columns and 'dec' in data.columns:
+            if target_col in data.columns:
+                scatter = axes[1, 1].scatter(data['ra'], data['dec'], 
+                                           c=data[target_col].astype('category').cat.codes,
+                                           cmap='viridis', alpha=0.6, s=10)
+                axes[1, 1].set_xlabel('Right Ascension (degrees)')
+                axes[1, 1].set_ylabel('Declination (degrees)')
+                axes[1, 1].set_title('Sky Distribution')
+                axes[1, 1].grid(alpha=0.3)
+                plt.colorbar(scatter, ax=axes[1, 1], label='Object Type')
+        
+        plt.tight_layout()
+        plt.show()
+    
+    def create_interactive_dashboard(self, data, target_col='class'):
+        """
+        Create an interactive dashboard for the data.
+        
+        Args:
+            data (pd.DataFrame): Input dataset
+            target_col (str): Target column name
+            
+        Returns:
+            plotly.graph_objects.Figure: Interactive dashboard
+        """
+        print("📊 Creating interactive dashboard...")
+        
+        try:
+            # Create a simple interactive scatter plot
+            fig = px.scatter(data, x='ra', y='dec', color=target_col,
+                           title='Interactive Astronomical Data Explorer',
+                           labels={'ra': 'Right Ascension', 'dec': 'Declination'})
+            
+            fig.update_layout(
+                width=1000,
+                height=600,
+                title_x=0.5
+            )
+            
+            return fig
+            
+        except Exception as e:
+            print(f"⚠️ Could not create interactive dashboard: {e}")
+            return None

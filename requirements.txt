@@ -37,6 +37,9 @@ xlrd>=2.0.0
 # Statistical Analysis
 statsmodels>=0.13.0
 
+# Dimensionality Reduction
+umap-learn>=0.5.3
+
 # Hyperparameter Tuning
 optuna>=3.0.0
 hyperopt>=0.2.7
